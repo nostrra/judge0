@@ -22,7 +22,7 @@ services:
     restart: always
 
   letsencrypt:
-    image: judge0/jrcs-letsencrypt-nginx-proxy-companion:v1.13.1
+    image: judge0/jrcs-letsencrypt-nginx-proxy-companion:v1.12.1
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./srv/ssl_certs:/etc/nginx/certs:rw
@@ -32,7 +32,7 @@ services:
     restart: always
 
   server:
-    image: judge0/judge0:latest
+    image: judge0/judge0:mytest1
     environment:
       - VIRTUAL_HOST=example.com
       - LETSENCRYPT_HOST=example.com
@@ -63,8 +63,8 @@ services:
   redis:
     image: redis:6.0
     command: [
-      "bash", "-c",
-      'docker-entrypoint.sh --appendonly yes --requirepass "$$REDIS_PASSWORD"'
+        "bash", "-c",
+        'docker-entrypoint.sh --appendonly yes --requirepass "$$REDIS_PASSWORD"'
     ]
     env_file: judge0.conf
     volumes:

@@ -33,7 +33,37 @@ class IsolateJob < ApplicationJob
       time << submission.time
       memory << submission.memory
 
-      cleanup
+      break if submission.status != Status.ac
+    end
+
+    submission.time = time.inject(&:+).to_f / time.size
+    submission.memory = memory.inject(&:+).to_f / memory.size
+    submission.save
+
+  rescue Exception => e
+    raise e.message unless submission
+    submission.finished_at ||= DateTime.now
+    submission.update(message: e.message, status: Status.boxerr)
+    cleanup(raise_exception = false)
+  ensure
+    call_callback
+  end
+
+  def rerun(submission_id)
+    @submission = Submission.find(submission_id)
+
+    time = []
+    memory = []
+
+    submission.update(status: Status.process)
+    submission.number_of_runs.times do
+      initialize_workdir
+      run
+      verify
+
+      time << submission.time
+      memory << submission.memory
+
       break if submission.status != Status.ac
     end
 
@@ -53,7 +83,7 @@ class IsolateJob < ApplicationJob
   private
 
   def initialize_workdir
-    @box_id = submission.id%2147483647
+    @box_id = submission.id
     @cgroups = (!submission.enable_per_process_and_thread_time_limit || !submission.enable_per_process_and_thread_memory_limit) ? "--cg" : ""
     @workdir = `isolate #{cgroups} -b #{box_id} --init`.chomp
     @boxdir = workdir + "/box"
@@ -262,12 +292,12 @@ class IsolateJob < ApplicationJob
     # I think this is for now O.K. behaviour, but I will leave this if block
     # here until I am 100% sure that "Exec Format Error" can be deprecated.
     if submission.status == Status.boxerr &&
-       (
-         submission.message.to_s.match(/^execve\(.+\): Exec format error$/) ||
-         submission.message.to_s.match(/^execve\(.+\): No such file or directory$/) ||
-         submission.message.to_s.match(/^execve\(.+\): Permission denied$/)
-       )
-       submission.status = Status.exeerr
+        (
+        submission.message.to_s.match(/^execve\(.+\): Exec format error$/) ||
+            submission.message.to_s.match(/^execve\(.+\): No such file or directory$/) ||
+            submission.message.to_s.match(/^execve\(.+\): Permission denied$/)
+        )
+      submission.status = Status.exeerr
     end
   end
 
@@ -294,28 +324,22 @@ class IsolateJob < ApplicationJob
     return unless submission.callback_url.present?
 
     serialized_submission = ActiveModelSerializers::SerializableResource.new(
-      submission,
-      {
-        serializer: SubmissionSerializer,
-        base64_encoded: true,
-        fields: SubmissionSerializer.default_fields
-      }
-    ).to_json
+        submission,
+        {
+            serializer: SubmissionSerializer,
+            base64_encoded: true,
+            fields: SubmissionSerializer.default_fields
+        }
+    )
 
-    Config::CALLBACKS_MAX_TRIES.times do
-      begin
-        response = HTTParty.put(
-          submission.callback_url,
-          body: serialized_submission,
-          headers: {
+    response = HTTParty.put(
+        submission.callback_url,
+        body: serialized_submission.to_json,
+        headers: {
             "Content-Type" => "application/json"
-          },
-          timeout: Config::CALLBACKS_TIMEOUT
-        )
-        break
-      rescue Exception => e
-      end
-    end
+        },
+        timeout: 2
+    )
   rescue Exception => e
   end
 
