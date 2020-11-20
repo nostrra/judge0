@@ -44,7 +44,7 @@ services:
     restart: always
 
   workers:
-    image: judge0/judge0:latest
+    image: judge0/judge0:mytest1
     command: ["./scripts/workers"]
     volumes:
       - ./judge0.conf:/judge0.conf:ro
