@@ -11,5 +11,4 @@ sudo chmod -R 777 /api/tmp
 sudo chmod -R gu+rw /api/tmp
 sudo chmod -R gu+s /usr/sbin/cron
 cron
-bash /api/scripts/server
 exec "$@"

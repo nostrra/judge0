@@ -1,7 +1,7 @@
 class SubmissionsController < ApplicationController
   before_action :authorize_request, only: [:index, :destroy]
   before_action :check_maintenance, only: [:create, :destroy]
-  before_action :check_wait, only: [:create, :rerun] # Wait in batch_create is not allowed
+  before_action :check_wait, only: [:create, :update] # Wait in batch_create is not allowed
   before_action :check_batched_submissions, only: [:batch_create, :batch_show]
   before_action :check_queue_size, only: [:create, :batch_create]
   before_action :check_requested_fields, except: [:batch_create] # Fields are ignored in batch_create
@@ -12,16 +12,16 @@ class SubmissionsController < ApplicationController
     per_page = params[:per_page].try(:to_i) || Submission.per_page
 
     if page <= 0
-      render json: { error: "invalid page: #{page}" }, status: :bad_request
+      render json: {error: "invalid page: #{page}"}, status: :bad_request
       return
     elsif per_page < 0
-      render json: { error: "invalid per_page: #{per_page}" }, status: :bad_request
+      render json: {error: "invalid per_page: #{per_page}"}, status: :bad_request
       return
     end
 
     submissions = Submission.paginate(page: page, per_page: per_page)
     serializable_submissions = ActiveModelSerializers::SerializableResource.new(
-        submissions, { each_serializer: SubmissionSerializer, base64_encoded: @base64_encoded, fields: @requested_fields }
+        submissions, {each_serializer: SubmissionSerializer, base64_encoded: @base64_encoded, fields: @requested_fields}
     )
 
     render json: {
@@ -36,7 +36,7 @@ class SubmissionsController < ApplicationController
 
   def destroy
     if !Config::ENABLE_SUBMISSION_DELETE
-      render json: { error: "delete not allowed" }, status: :bad_request
+      render json: {error: "delete not allowed"}, status: :bad_request
       return
     end
 
@@ -80,22 +80,17 @@ class SubmissionsController < ApplicationController
     end
   end
 
-  def rerun
+  def update
     submission = Submission.find_by!(token: params[:token])
 
     submission.stdin = params[:stdin]
 
     if submission.save
-      if @wait
-        begin
-          IsolateJob.rerun_now(submission.id)
-          render json: submission, status: :created, base64_encoded: @base64_encoded, fields: @requested_fields
-        rescue Encoding::UndefinedConversionError => e
-          render_conversion_error(:created, submission.token)
-        end
-      else
-        IsolateJob.rerun_later(submission.id)
-        render json: submission, status: :created, fields: [:token]
+      begin
+        IsolateJob.rerun(submission.id)
+        render json: submission, status: :created, base64_encoded: @base64_encoded, fields: @requested_fields
+      rescue Encoding::UndefinedConversionError => e
+        render_conversion_error(:created, submission.token)
       end
     else
       render json: submission.errors, status: :unprocessable_entity
@@ -117,13 +112,13 @@ class SubmissionsController < ApplicationController
       return
     end
 
-    existing_submissions = Hash[Submission.where(token: tokens).collect{ |s| [s.token, s] }]
+    existing_submissions = Hash[Submission.where(token: tokens).collect { |s| [s.token, s] }]
 
     submissions = []
     tokens.each do |token|
       if existing_submissions.has_key?(token)
-        serialized_submission  = ActiveModelSerializers::SerializableResource.new(
-            existing_submissions[token], { serializer: SubmissionSerializer, base64_encoded: @base64_encoded, fields: @requested_fields }
+        serialized_submission = ActiveModelSerializers::SerializableResource.new(
+            existing_submissions[token], {serializer: SubmissionSerializer, base64_encoded: @base64_encoded, fields: @requested_fields}
         )
         submissions << serialized_submission.as_json
       else
@@ -131,7 +126,7 @@ class SubmissionsController < ApplicationController
       end
     end
 
-    render json: { submissions: submissions }
+    render json: {submissions: submissions}
   rescue Encoding::UndefinedConversionError => e
     render json: {
         error: "some attributes for one or more submissions cannot be converted to UTF-8, use base64_encoded=true query parameter"
@@ -154,7 +149,7 @@ class SubmissionsController < ApplicationController
       return
     end
 
-    submissions = params[:submissions].each.collect{ |p| Submission.new(submission_params(p)) }
+    submissions = params[:submissions].each.collect { |p| Submission.new(submission_params(p)) }
 
     response = []
     has_valid_submission = false
@@ -162,7 +157,7 @@ class SubmissionsController < ApplicationController
     submissions.each do |submission|
       if submission.save
         IsolateJob.perform_later(submission.id)
-        response << { token: submission.token }
+        response << {token: submission.token}
         has_valid_submission = true
       else
         response << submission.errors
@@ -211,26 +206,26 @@ class SubmissionsController < ApplicationController
   def check_wait
     @wait = params[:wait] == "true"
     if @wait && !Config::ENABLE_WAIT_RESULT
-      render json: { error: "wait not allowed" }, status: :bad_request
+      render json: {error: "wait not allowed"}, status: :bad_request
     end
   end
 
   def check_batched_submissions
     unless Config::ENABLE_BATCHED_SUBMISSIONS
-      render json: { error: "batched submissions are not allowed" }, status: :bad_request
+      render json: {error: "batched submissions are not allowed"}, status: :bad_request
     end
   end
 
   def check_queue_size
     number_of_submissions = params[:submissions].try(:size).presence || 1
     if Resque.size(ENV["JUDGE0_VERSION"]) + number_of_submissions > Config::MAX_QUEUE_SIZE
-      render json: { error: "queue is full" }, status: :service_unavailable
+      render json: {error: "queue is full"}, status: :service_unavailable
     end
   end
 
   def check_requested_fields
     fields_service = Fields::Submission.new(params[:fields])
-    render json: { error: "invalid fields: [#{fields_service.invalid_fields.join(", ")}]" }, status: :bad_request if fields_service.has_invalid_fields?
+    render json: {error: "invalid fields: [#{fields_service.invalid_fields.join(", ")}]"}, status: :bad_request if fields_service.has_invalid_fields?
     @requested_fields = fields_service.requested_fields
   end
 
