@@ -14,7 +14,7 @@ class IsolateJob < ApplicationJob
               :source_file, :stdin_file, :stdout_file,
               :stderr_file, :metadata_file, :additional_files_archive_file
 
-  def perform(submission_id)
+  def perform(submission_id, flag)
     @submission = Submission.find(submission_id)
 
     time = []
@@ -23,41 +23,12 @@ class IsolateJob < ApplicationJob
     submission.update(status: Status.process)
     submission.number_of_runs.times do
       initialize_workdir
-      if compile == :failure
-        cleanup
-        return
+      unless flag
+        if compile == :failure
+          cleanup
+          return
+        end
       end
-      run
-      verify
-
-      time << submission.time
-      memory << submission.memory
-
-      break if submission.status != Status.ac
-    end
-
-    submission.time = time.inject(&:+).to_f / time.size
-    submission.memory = memory.inject(&:+).to_f / memory.size
-    submission.save
-
-  rescue Exception => e
-    raise e.message unless submission
-    submission.finished_at ||= DateTime.now
-    submission.update(message: e.message, status: Status.boxerr)
-    cleanup(raise_exception = false)
-  ensure
-    call_callback
-  end
-
-  def rerun(submission_id)
-    @submission = Submission.find(submission_id)
-
-    time = []
-    memory = []
-
-    submission.update(status: Status.process)
-    submission.number_of_runs.times do
-      initialize_workdir
       run
       verify
 
@@ -330,16 +301,22 @@ class IsolateJob < ApplicationJob
             base64_encoded: true,
             fields: SubmissionSerializer.default_fields
         }
-    )
+    ).to_json
 
-    response = HTTParty.put(
-        submission.callback_url,
-        body: serialized_submission.to_json,
-        headers: {
-            "Content-Type" => "application/json"
-        },
-        timeout: 2
-    )
+    Config::CALLBACKS_MAX_TRIES.times do
+      begin
+        response = HTTParty.put(
+            submission.callback_url,
+            body: serialized_submission,
+            headers: {
+                "Content-Type" => "application/json"
+            },
+            timeout: Config::CALLBACKS_TIMEOUT
+        )
+        break
+      rescue Exception => e
+      end
+    end
   rescue Exception => e
   end
 

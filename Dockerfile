@@ -33,7 +33,6 @@ RUN RAILS_ENV=production bundle
 COPY cron /etc/cron.d
 RUN cat /etc/cron.d/* | crontab -
 
-
 COPY . .
 
 ENTRYPOINT ["./docker-entrypoint.sh"]
