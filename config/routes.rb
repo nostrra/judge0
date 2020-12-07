@@ -1,7 +1,7 @@
 Rails.application.routes.draw do
   root 'home#docs'
 
-  resources :submissions, only: [:index, :show, :create, :destroy, :update], param: :token do
+  resources :submissions, only: [:index, :show, :create, :destroy], param: :token do
     post 'batch', to: 'submissions#batch_create', on: :collection
     get 'batch', to: 'submissions#batch_show', on: :collection
   end
@@ -19,6 +19,8 @@ Rails.application.routes.draw do
   get 'version', to: 'info#version'
   get 'license', to: 'info#license'
   get 'statistics', to: 'info#statistics'
+
+  post 'rerun/:token', to: 'submissions#rerun'
 
   post 'authenticate', to: 'sessions#authenticate'
   post 'authorize', to: 'sessions#authorize'

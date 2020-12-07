@@ -121,7 +121,7 @@ class SubmissionsController < ApplicationController
     end
   end
 
-  def update
+  def rerun
     submission = Submission.find_by!(token: params[:token])
 
     submission.update(stdin: params[:stdin])
